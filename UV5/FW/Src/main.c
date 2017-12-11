@@ -331,7 +331,7 @@ int main(void)
 				cal_pitch = Smooth_filter(0.95f, (float)q_pitch*0.1f, cal_pitch);
 				cal_roll = Smooth_filter(0.95f, (float)q_roll*0.1f, cal_roll);
 
-				Errer_pitch =  Robot_Target_Angle + (float)cal_pitch;
+				Errer_pitch =  - Robot_Target_Angle + (float)cal_pitch;
 				
 				D_Error_pitch = Butterworth_filter(&filed_pitch,(Errer_pitch-Buf_D_Errer_pitch) * sampleFreq * 0.1f);
 
