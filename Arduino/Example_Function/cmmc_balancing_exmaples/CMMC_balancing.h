@@ -1,11 +1,9 @@
-
-#include "CMMC_Receiver.h"
 #include <SPI.h>
 
 #define slaveSelectPin     15
 #define process_time_uS    18
 
-#define none                      0x01
+#define none                      0x00
 #define PD_Controller             0x02
 #define Enable_Motor              0x04
 #define PI_Steering               0x08
@@ -13,7 +11,6 @@
 #define acc_calibation_mode       0x20
 #define gyro_calibation_mode      0x40
 #define Manual_Motor_control      0x80
-
 
 typedef struct __attribute((__packed__))Control_data {
 
@@ -41,11 +38,7 @@ typedef struct __attribute((__packed__))Control_data {
 
 } Control_data;
 
-Control_data State_data;
-
-
-byte AreRobotStand = 0;
-
+extern Control_data State_data;
 
 float Smooth_filter(float alfa, float new_data, float prev_data)
 {
@@ -59,18 +52,12 @@ float limit(float x, float lower_b, float upper_b)
   return x;
 }
 
-void setup() {
-
-  // set the slaveSelectPin as an output:
-  Serial.begin(115200);
-
-  receriver_init();
-
+void Init(void) {
   pinMode(slaveSelectPin, OUTPUT);
   // initialize SPI:
   SPI.begin();
   SPI.setFrequency(8000000);
-  delay(2000);
+  delay(1000);
 
   delayMicroseconds(process_time_uS);
   SPI.transfer(0);
@@ -84,139 +71,10 @@ void setup() {
   SPI.transfer(0);
   delayMicroseconds(process_time_uS);
   SPI.transfer(0);
-
-//  while (1) {
-//    State_data.mode = gyro_calibation_mode | acc_calibation_mode;
-//    Set_Mode(State_data.mode);
-//    delay(10000);
-//    Get_OffsetAngularVelocity(&State_data.OffsetGyroX);
-//    Serial.print(State_data.OffsetGyroX);  Serial.print("\t");
-//    Serial.print(State_data.OffsetGyroY);  Serial.print("\t");
-//    Serial.print(State_data.OffsetGyroZ);  Serial.print("\t");
-//
-//    Get_OffsetAccelerations(&State_data.OffsetAccX);
-//    Serial.print(State_data.OffsetAccX);  Serial.print("\t");
-//    Serial.print(State_data.OffsetAccY);  Serial.print("\t");
-//    Serial.print(State_data.OffsetAccZ);  Serial.println("\t");
-//  }
-
-  State_data.mode = PI_Steering | PD_Controller | Enable_Motor;
-  Set_Mode(State_data.mode);
-}
-float Kp_Speed = 0;
-float Ki_Speed = 0;
-
-float error_speed;
-float error_speed_sum;
-float Robot_Target_Angle;
-float Robot_speed;
-uint32_t timenow, t1, t2, t3;
-uint32_t p1, p2, p3;
-void loop() {
-
-
-  receriver_loop();
-
-  timenow = millis();
-
-  if (timenow - t1 >= 10) {  // 100Hz Speed reading
-    t1 = timenow;
-
-    static int32_t last_L, last_R;
-
-    Get_Positions(&State_data.Position_motorL);
-
-    float dL =  ((int32_t)State_data.Position_motorL - last_L);
-    float dR =  ((int32_t)State_data.Position_motorR - last_R);
-
-    last_L = (int32_t)State_data.Position_motorL;
-    last_R = (int32_t)State_data.Position_motorR;
-
-    Robot_speed  = Smooth_filter(0.05f, (dR + dL) * 0.5f, Robot_speed); // 1hz lowpass
-  }
-
-  if (timenow - t2 >= 50) { // 50Hz velocity control
-    t2 = timenow;
-    Get_Angles(&State_data.roll);
-
-    float kp = (float)tuningData[1].kp * 0.005f;
-    float ki = (float)tuningData[1].ki * 0.0005f;
-
-    float P_limit = map (abs(Robot_speed), 0, 50, 250, 150);
-
-    error_speed = limit(kp * (-(float)Get_ChannelValue(2) * 0.4f + Robot_speed), -P_limit, P_limit);
-
-    float i_limit = map (abs(Robot_speed), 0, 50, 150, 0);
-
-    error_speed_sum = limit((error_speed_sum + (error_speed * 0.2f)), -i_limit / ki, i_limit / ki);
-
-    State_data.Pitch_Ref = limit(ki * error_speed_sum + error_speed, -350, 350); // angle ref Control
-
-    State_data.Steering_Ref = (float)Get_ChannelValue(1) * (float)tuningData[0].kp * 0.04f; // L-R Control
-
-
-
-    if ( abs(State_data.pitch) > 450 | abs(State_data.roll) > 450) AreRobotStand = 0;
-    if ( abs(State_data.pitch) <  50 & abs(State_data.roll) < 450) AreRobotStand = 1;
-
-    if (AreRobotStand) {
-
-      State_data.mode = State_data.mode | Enable_Motor;
-      Set_Mode(State_data.mode);
-
-    } else {
-      State_data.mode = State_data.mode & (0xff - Enable_Motor);
-      Set_Mode(State_data.mode);
-      error_speed_sum = 0;
-    }
-
-    Set_Control(&State_data.Pitch_Ref);
-
-
-  }
-
-  if (timenow - t3 >= 100) { // 10Hz Serial print
-    t3 = timenow;
-    Serial.print("robot speed ");  Serial.print(Robot_speed);
-    Serial.print("     Pitch_Ref");  Serial.print(State_data.Pitch_Ref);
-    Serial.print("     Steering_Ref");  Serial.print(State_data.Steering_Ref);
-
-    Serial.print("     Roll ");  Serial.print(State_data.roll);
-    Serial.print("     Pitch ");  Serial.print(State_data.pitch);
-    Serial.print("     Roll ");  Serial.print(State_data.yaw);
-
-    Serial.print("   kp ");  Serial.print(tuningData[1].kp);
-    Serial.print("   ki ");  Serial.print(tuningData[1].ki);
-
-    Serial.print("\n");
-  }
-
-  //  Get_Positions(&State_data.Position_motorL);
-  //  Serial.print(State_data.Position_motorL);  Serial.print("\t");
-  //  Serial.print(State_data.Position_motorR);  Serial.print("\t");
-  //
-  //  Get_VRs(&State_data.VR1);
-  //  Serial.print(State_data.VR1);  Serial.print("\t");
-  //  Serial.print(State_data.VR2);  Serial.print("\t");
-  //  Serial.print(State_data.VR3);  Serial.print("\t");
-  //  Serial.print(State_data.VR4);  Serial.print("\t");
-  //
-  //  Get_Accelerations(&State_data.AccX);
-  //  Serial.print(State_data.AccX);  Serial.print("\t");
-  //  Serial.print(State_data.AccY);  Serial.print("\t");
-  //  Serial.print(State_data.AccZ);  Serial.print("\t");
-  //
-  //  Get_Angles(&State_data.roll);
-  //  Serial.print(State_data.roll);  Serial.print("\t");
-  //  Serial.print(State_data.pitch);  Serial.print("\t");
-  //  Serial.print(State_data.yaw);  Serial.print("\t");
-  //
-  //    Get_OffsetAngularVelocity(&State_data.OffsetGyroX);
-  //    Serial.print(State_data.OffsetGyroX);  Serial.print("\t");
-  //    Serial.print(State_data.OffsetGyroY);  Serial.print("\t");
-  //    Serial.print(State_data.OffsetGyroZ);  Serial.print("\t");
-  //  delay(100);
-
+  delayMicroseconds(process_time_uS);
+  SPI.transfer(0);
+  delayMicroseconds(process_time_uS);
+  SPI.transfer(0);
 }
 
 void Set_Mode(uint16_t tmp) {
@@ -323,13 +181,15 @@ void Get_Positions(int32_t *tmp) {
   digitalWrite(slaveSelectPin, HIGH);
 }
 
-void Set_P_Motors(int32_t *tmp) {
-  uint16_t* tmp1 = (uint16_t*)tmp;
+void Set_P_Motors(int16_t* tmp) {
+
   digitalWrite(slaveSelectPin, LOW);
   delayMicroseconds(process_time_uS);
   SPI.transfer(0x0A);
   delayMicroseconds(process_time_uS);
-  tmp1[0] =  (uint16_t)SPI.transfer(0) | (uint16_t)SPI.transfer(0) << 8; // Power_MotorL
-  tmp1[1] =  (uint16_t)SPI.transfer(0) | (uint16_t)SPI.transfer(0) << 8; // Power_MotorR
+  SPI.transfer(tmp[0]);
+  SPI.transfer(tmp[0] >> 8);
+  SPI.transfer(tmp[1]);
+  SPI.transfer(tmp[1] >> 8);
   digitalWrite(slaveSelectPin, HIGH);
 }
