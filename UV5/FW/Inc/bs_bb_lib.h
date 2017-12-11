@@ -286,7 +286,7 @@ void AHRS(void)
 		/* Compute pitch/roll angles */
 		
     q_roll  =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-    q_pitch = -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_pitch =  (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
 		
 		q_yaw   = q_yaw + (2 * gz * (1800.0f / M_PIf));
 		
